@@ -46,8 +46,16 @@ steps:
 
 Uses the upstream actions:
 
+<!-- markdownlint-disable MD013 -->
+
 - [1password/load-secrets-action](https://github.com/1password/load-secrets-action)
+- [modeseven-lfreleng-actions/gh-action-pypi-publish](https://github.com/modeseven-lfreleng-actions/gh-action-pypi-publish)
+
+The second action above is a modified/forked version of another action:
+
 - [pypa/gh-action-pypi-publish](https://github.com/pypa/gh-action-pypi-publish)
+
+<!-- markdownlint-enable MD013 -->
 
 ## Authentication Methods
 

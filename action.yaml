@@ -10,49 +10,42 @@ inputs:
   path_prefix:
     description: 'Directory location containing project code'
     required: false
-    type: string
     default: '.'
   environment:
     # When defined/used MUST match the trusted publishing setup in PyPI
     description: 'Environment used to source credentials'
-    type: 'string'
     required: false
     default: 'production'
   tag:
     description: 'Tag/version string for this release/build'
     required: true
-    type: 'string'
   artefact_path:
     description: 'Path/location to build artefacts'
     required: false
-    type: 'string'
     default: 'dist'
+  artefact_pattern:
+    description: 'Pattern to download multiple artefacts'
+    required: false
   one_password_item:
     description: 'Path to 1Password vault credential for PyPI'
     required: false
-    type: 'string'
   op_service_account_token:
     description: '1Password service account credential to access vault'
     required: false
-    type: 'string'
   pypi_credential:
     description: 'PyPI API credential from GitHub secrets'
     required: false
-    type: 'string'
   publish_disable:
     description: 'Disables the final publishing step that uploads packages'
-    type: boolean
     required: false
     default: false
   attestations:
     description: 'Enables upload/publishing support for attestations'
-    type: boolean
     required: false
     default: false
   no_checkout:
     # Required during action testing to avoid changes to local files
     description: 'Do not checkout local repository; used for testing'
-    type: 'boolean'
     required: false
     default: false
 
@@ -80,12 +73,22 @@ runs:
       with:
         path_prefix: "${{ inputs.path_prefix }}"
 
-    - name: '⬇ Download build artefacts'
+    - name: '⬇ Download build artefacts (single)'
       # yamllint disable-line rule:line-length
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      if: inputs.artefact_pattern == ''
       with:
         name: "${{ steps.naming.outputs.python_project_name }}"
         path: "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}"
+
+    - name: '⬇ Download build artefacts (pattern)'
+      # yamllint disable-line rule:line-length
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      if: inputs.artefact_pattern != ''
+      with:
+        pattern: "${{ inputs.artefact_pattern }}"
+        path: "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}"
+        merge-multiple: true
 
     - name: 'Derive publishing parameters'
       id: parameters

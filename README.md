@@ -24,6 +24,29 @@ steps:
 
 <!-- markdownlint-enable MD046 -->
 
+### Multi-Platform Builds
+
+For projects with platform-specific wheels (x64, ARM64, Python 3.10+),
+use the `artefact_pattern` input to download all artefacts:
+
+<!-- markdownlint-disable MD046 -->
+
+```yaml
+steps:
+  - name: 'Publish to PyPI'
+    uses: lfreleng-actions/pypi-publish-action@main
+    with:
+      environment: 'production'
+      tag: 'v1.0.0'
+      artefact_pattern: 'python-package-*'
+      attestations: true
+```
+
+<!-- markdownlint-enable MD046 -->
+
+This downloads all artefacts matching the pattern and merges them into the
+dist directory for publishing.
+
 ## Inputs
 
 <!-- markdownlint-disable MD013 -->
@@ -33,12 +56,13 @@ steps:
 | environment              | False    | Mandatory environment, e.g. development, production      |
 | tag                      | False    | Tag for this build/release                               |
 | artefact_path            | False    | Path/location of build artefacts                         |
+| artefact_pattern         | False    | Glob pattern to download and merge build artefacts       |
 | one_password_item        | False    | 1Password vault credential for PyPI publishing           |
 | op_service_account_token | False    | 1Password service account credential to access vault     |
 | pypi_credential          | False    | PyPI API credential from GitHub secrets                  |
 | publish_disable          | False    | Disables the final publishing step that uploads packages |
-| attesations              | False    | Enables GitHub support for artefact attestations         |
-| no_checkout              | False    | Don't perform a checkout of the local repository         |
+| attestations             | False    | Enables GitHub support for artefact attestations         |
+| no_checkout              | False    | Do not checkout local repository; used for testing       |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -68,8 +92,8 @@ OIDC token)
 - Static credential retrieved from 1Password vault using a service account
 - A static credential from GitHub secrets
 
-Note: the first/initial publishing step cannot leverage Trusted Publishing
+Note: the first/initial publishing step cannot use Trusted Publishing
 
-The first time a given repository gets published to PyPI, a static API key
-is necessary. After this, setup trusted publishing for the project in the
-PyPI web portal.
+The first time a repository gets published to PyPI, use a static API key.
+After this, set up trusted publishing for the project in the PyPI web
+portal.

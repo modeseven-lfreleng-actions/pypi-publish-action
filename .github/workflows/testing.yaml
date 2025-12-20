@@ -48,7 +48,7 @@ jobs:
 
       - name: 'Build Python project'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/python-build-action@f3b78ac710af9dca46c5c4562f53ac3660f2ea59 # v0.1.7
+        uses: lfreleng-actions/python-build-action@e74a56d61b59b55516ee05037303528423d8ed5a # v1.0.0
         with:
           tag: "${{ env.tag }}"
           path_prefix: 'test-python-project'

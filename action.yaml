@@ -189,7 +189,7 @@ runs:
       # Also, be cautious pinning v1.12.x to a SHA commit value:
       # https://github.com/pypa/gh-action-pypi-publish/discussions/287
       # yamllint disable-line rule:line-length
-      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@0e8e94cc5a3de566831485316f646bace91ceb25  # v1.11.4
+      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@072e454d5dc9a1a32d345d2a016876612d2d6b2d  # v1.11.5
       # yamllint disable-line rule:line-length
       if: env.publish_method == 'Trusted Publishing' && inputs.publish_disable == 'false'
       with:
@@ -221,7 +221,7 @@ runs:
       # Also, be cautious pinning v1.12.x to a SHA commit value:
       # https://github.com/pypa/gh-action-pypi-publish/discussions/287
       # yamllint disable-line rule:line-length
-      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@0e8e94cc5a3de566831485316f646bace91ceb25  # v1.11.4
+      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@072e454d5dc9a1a32d345d2a016876612d2d6b2d  # v1.11.5
       # yamllint disable-line rule:line-length
       if: env.publish_method == '1Password Vault' && inputs.publish_disable == 'false'
       with:
@@ -241,7 +241,7 @@ runs:
       # Also, be cautious pinning v1.12.x to a SHA commit value:
       # https://github.com/pypa/gh-action-pypi-publish/discussions/287
       # yamllint disable-line rule:line-length
-      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@0e8e94cc5a3de566831485316f646bace91ceb25  # v1.11.4
+      uses: modeseven-lfreleng-actions/gh-action-pypi-publish@072e454d5dc9a1a32d345d2a016876612d2d6b2d  # v1.11.5
       if:
         # yamllint disable-line rule:line-length
         env.publish_method == 'GitHub Secret' && inputs.publish_disable == 'false'

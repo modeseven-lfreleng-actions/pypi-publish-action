@@ -51,18 +51,20 @@ dist directory for publishing.
 
 <!-- markdownlint-disable MD013 -->
 
-| Name                     | Required | Description                                              |
-| ------------------------ | -------- | -------------------------------------------------------- |
-| environment              | False    | Mandatory environment, e.g. development, production      |
-| tag                      | False    | Tag for this build/release                               |
-| artefact_path            | False    | Path/location of build artefacts                         |
-| artefact_pattern         | False    | Glob pattern to download and merge build artefacts       |
-| one_password_item        | False    | 1Password vault credential for PyPI publishing           |
-| op_service_account_token | False    | 1Password service account credential to access vault     |
-| pypi_credential          | False    | PyPI API credential from GitHub secrets                  |
-| publish_disable          | False    | Disables the final publishing step that uploads packages |
-| attestations             | False    | Enables GitHub support for artefact attestations         |
-| no_checkout              | False    | Do not checkout local repository; used for testing       |
+| Name                     | Required | Description                                                |
+| ------------------------ | -------- | ---------------------------------------------------------- |
+| path_prefix              | False    | Directory location containing project code (default: '.')  |
+| environment              | False    | Mandatory environment, e.g. development, production        |
+| tag                      | True     | Tag for this build/release                                 |
+| artefact_path            | False    | Path/location of build artefacts                           |
+| artefact_pattern         | False    | Glob pattern to download and merge build artefacts         |
+| one_password_item        | False    | 1Password vault credential for PyPI publishing             |
+| op_service_account_token | False    | 1Password service account credential to access vault       |
+| pypi_credential          | False    | PyPI API credential from GitHub secrets                    |
+| trusted_publishing       | False    | Controls trusted publishing behaviour (auto/true/false)    |
+| publish_disable          | False    | Disables the final publishing step that uploads packages   |
+| attestations             | False    | Enables GitHub support for artefact attestations           |
+| no_checkout              | False    | Do not checkout local repository; used for testing         |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -92,8 +94,43 @@ OIDC token)
 - Static credential retrieved from 1Password vault using a service account
 - A static credential from GitHub secrets
 
-Note: the first/initial publishing step cannot use Trusted Publishing
+### Trusted Publishing Input
 
-The first time a repository gets published to PyPI, use a static API key.
-After this, set up trusted publishing for the project in the PyPI web
-portal.
+The `trusted_publishing` input controls how the action selects its
+authentication method:
+
+<!-- markdownlint-disable MD013 -->
+
+| Value   | Behaviour                                                      |
+| ------- | -------------------------------------------------------------- |
+| `auto`  | Default. The action selects trusted publishing when the        |
+|         | package already exists in the index. Falls back to             |
+|         | credential-based methods for packages without a prior release. |
+| `true`  | Always use trusted publishing, even for first-time publishes.  |
+|         | Use this when trusted publishing has been pre-configured in    |
+|         | the PyPI web portal before the first release.                  |
+| `false` | Never use trusted publishing. Always use credential-based      |
+|         | methods (1Password or GitHub secret).                          |
+
+<!-- markdownlint-enable MD013 -->
+
+### Pre-Configured Trusted Publishing
+
+<!-- markdownlint-disable MD013 -->
+
+PyPI now supports configuring trusted publishers **before** a package has
+ever had a release. When you pre-configure trusted publishing for a
+new project on PyPI (or Test PyPI), set `trusted_publishing: 'true'` to
+allow the first publish to use OIDC authentication directly, without
+requiring a static API key.
+
+<!-- markdownlint-enable MD013 -->
+
+```yaml
+- name: 'Publish to PyPI'
+  uses: lfreleng-actions/pypi-publish-action@main
+  with:
+    environment: 'production'
+    tag: 'v1.0.0'
+    trusted_publishing: 'true'
+```

@@ -35,6 +35,14 @@ inputs:
   pypi_credential:
     description: 'PyPI API credential from GitHub secrets'
     required: false
+  trusted_publishing:
+    # PyPI now supports pre-configuring trusted publishers before first publish
+    # When set to 'true', trusted publishing is always attempted
+    # When set to 'false', trusted publishing is never used (credential only)
+    # When set to 'auto', trusted publishing requires prior package presence
+    description: 'Controls trusted publishing behaviour (auto/true/false)'
+    required: false
+    default: 'auto'
   publish_disable:
     description: 'Disables the final publishing step that uploads packages'
     required: false
@@ -126,9 +134,30 @@ runs:
       shell: bash
       run: |
         # Determine publishing method
-        if [ "${{ steps.check-remote.outputs.package_match }}" = "true" ]; then
+
+        publish_method=""
+        TRUSTED_PUBLISHING="${{ inputs.trusted_publishing }}"
+        PACKAGE_MATCH="${{ steps.check-remote.outputs.package_match }}"
+        echo "Trusted publishing mode: $TRUSTED_PUBLISHING"
+
+        ### Trusted Publishing Override ###
+
+        if [ "$TRUSTED_PUBLISHING" = "true" ]; then
           publish_method="Trusted Publishing"
-          echo "Project previously published; using Trusted Publishing ✅"
+          echo "Trusted publishing forced by input parameter ✅"
+        elif [ "$TRUSTED_PUBLISHING" = "false" ]; then
+          echo "Trusted publishing disabled by input parameter ⚠️"
+          tp_disabled="true"
+        elif [ "$TRUSTED_PUBLISHING" = "auto" ]; then
+          if [ "$PACKAGE_MATCH" = "true" ]; then
+            publish_method="Trusted Publishing"
+            echo "Project previously published; using Trusted Publishing ✅"
+          fi
+        else
+          echo "Error: invalid trusted_publishing" \
+            "value: $TRUSTED_PUBLISHING ❌"
+          echo "Valid values: auto, true, false"
+          exit 1
         fi
 
         if [ "${{ steps.check-remote.outputs.version_match }}" != 'true' ]; then
@@ -148,7 +177,11 @@ runs:
         fi
 
         if [ "$publish_method" != "Trusted Publishing" ]; then
-          echo "Trusted publishing NOT available, using fallback methods 👇🏻"
+          if [ "${tp_disabled:-false}" = "true" ]; then
+            echo "Trusted publishing disabled; using fallback methods 👇🏻"
+          else
+            echo "Trusted publishing NOT available; using fallback methods 👇🏻"
+          fi
 
           ### 1Password Vault Credential ###
 

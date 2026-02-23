@@ -96,21 +96,40 @@ OIDC token)
 
 ### Trusted Publishing Input
 
+When `trusted_publishing` is `auto` or `true`, the calling workflow job
+**must** grant `id-token: write` permission for the OIDC token exchange to
+succeed, and `contents: read` so the default `actions/checkout` step can run:
+
+<!-- markdownlint-disable MD046 -->
+
+```yaml
+jobs:
+  publish:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: read
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    steps:
+      - name: 'Publish to PyPI'
+        uses: lfreleng-actions/pypi-publish-action@main
+        with:
+          environment: 'production'
+          tag: 'v1.0.0'
+          trusted_publishing: 'true'
+```
+
+<!-- markdownlint-enable MD046 -->
+
 The `trusted_publishing` input controls how the action selects its
 authentication method:
 
 <!-- markdownlint-disable MD013 -->
 
-| Value   | Behaviour                                                      |
-| ------- | -------------------------------------------------------------- |
-| `auto`  | Default. The action selects trusted publishing when the        |
-|         | package already exists in the index. Falls back to             |
-|         | credential-based methods for packages without a prior release. |
-| `true`  | Always use trusted publishing, even for first-time publishes.  |
-|         | Use this when trusted publishing has been pre-configured in    |
-|         | the PyPI web portal before the first release.                  |
-| `false` | Never use trusted publishing. Always use credential-based      |
-|         | methods (1Password or GitHub secret).                          |
+| Value   | Behaviour                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auto`  | Default. The action selects trusted publishing when the package already exists in the index. Falls back to credential-based methods otherwise.   |
+| `true`  | Always use trusted publishing, even for first-time publishes. Use this when you pre-configure trusted publishing in the PyPI web portal.         |
+| `false` | Never use trusted publishing. Always use credential-based methods (1Password or GitHub secret).                                                  |
 
 <!-- markdownlint-enable MD013 -->
 

@@ -77,7 +77,7 @@ runs:
     - name: 'Extract project/repository naming'
       id: naming
       # yamllint disable-line rule:line-length
-      uses: lfreleng-actions/python-project-name-action@9f2cc7d37847d5f5497ba87d14e574b2f0a07462 # v0.1.6
+      uses: lfreleng-actions/python-project-name-action@4190dfce1bd534d7976dd031d455da392ff55321 # v0.1.7
       with:
         path_prefix: "${{ inputs.path_prefix }}"
 

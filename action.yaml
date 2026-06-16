@@ -46,16 +46,16 @@ inputs:
   publish_disable:
     description: 'Disables the final publishing step that uploads packages'
     required: false
-    default: false
+    default: 'false'
   attestations:
     description: 'Enables upload/publishing support for attestations'
     required: false
-    default: false
+    default: 'false'
   no_checkout:
     # Required during action testing to avoid changes to local files
     description: 'Do not checkout local repository; used for testing'
     required: false
-    default: false
+    default: 'false'
 
 runs:
   using: 'composite'

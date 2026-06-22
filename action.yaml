@@ -63,16 +63,100 @@ runs:
     # Need repository content to extract project name
     - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       if: inputs.no_checkout != 'true'
+      with:
+        # Action only reads repository content; no credential persistence
+        persist-credentials: false
 
     - name: "Verify path prefix"
       if: inputs.path_prefix != '.'
       shell: bash
+      env:
+        PATH_PREFIX: "${{ inputs.path_prefix }}"
       run: |
-        # Verify path prefix is valid directory path
-        if [ ! -d "${{ inputs.path_prefix }}" ]; then
+        # Verify path prefix is a safe, in-workspace directory path
+        case "$PATH_PREFIX" in
+          /*)
+            echo "Error: path_prefix must be a relative path ❌"
+            exit 1
+            ;;
+          *..*)
+            echo "Error: path_prefix must not contain '..' ❌"
+            exit 1
+            ;;
+        esac
+        if [ ! -d "$PATH_PREFIX" ]; then
           echo "Error: invalid path/prefix to project directory ❌"
           exit 1
         fi
+        # Ensure the resolved path stays within the workspace, so later
+        # steps (e.g. 'find ... -exec rm') cannot touch external files.
+        # 'cd --' stops a leading '-' in the path being read as an option.
+        workspace="$(cd -- "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+        resolved="$(cd -- "$PATH_PREFIX" && pwd -P)"
+        case "$resolved/" in
+          "$workspace"/*) ;;
+          *)
+            echo "Error: path_prefix escapes the workspace directory ❌"
+            exit 1
+            ;;
+        esac
+
+    - name: 'Validate artefact path'
+      shell: bash
+      env:
+        PATH_PREFIX: "${{ inputs.path_prefix }}"
+        ARTEFACT_PATH: "${{ inputs.artefact_path }}"
+      run: |
+        # Validate artefact_path before it is used as a download
+        # destination (path_prefix/artefact_path) and, later, as a
+        # 'find ... -exec rm' target. Reject empty, absolute and
+        # traversal values here so no filesystem-write step can be
+        # pointed outside the workspace. Combined with the path_prefix
+        # checks, a relative, non-'..' value cannot escape the
+        # workspace. Containment of the resolved directory is
+        # re-verified once it exists in the cleanup step below.
+        if [ -z "$ARTEFACT_PATH" ]; then
+          echo "Error: artefact_path must not be empty ❌"
+          exit 1
+        fi
+        case "$ARTEFACT_PATH" in
+          /*)
+            echo "Error: artefact_path must be a relative path ❌"
+            exit 1
+            ;;
+          *..*)
+            echo "Error: artefact_path must not contain '..' ❌"
+            exit 1
+            ;;
+        esac
+        # Syntactic checks alone do not cover a pre-created symlink: a
+        # caller repo could make 'path_prefix/artefact_path' (or an
+        # ancestor) a symlink pointing outside the workspace, which the
+        # following download step would follow. Resolve the nearest
+        # existing ancestor directory of the destination and confirm it
+        # stays within the workspace before any download writes to it.
+        workspace="$(cd -- "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+        target="$PATH_PREFIX/$ARTEFACT_PATH"
+        # Reject a destination that resolves to the workspace root (e.g.
+        # artefact_path '.'), which would extract artefacts over the
+        # repository contents and change what gets published.
+        if [ -d "$target" ] \
+          && [ "$(cd -- "$target" && pwd -P)" = "$workspace" ]; then
+          echo "Error: artefact_path must not resolve to the workspace root ❌"
+          exit 1
+        fi
+        probe="$target"
+        while [ ! -d "$probe" ]; do
+          probe="$(dirname -- "$probe")"
+        done
+        resolved="$(cd -- "$probe" && pwd -P)"
+        case "$resolved/" in
+          "$workspace"/*) ;;
+          *)
+            echo "Error: artefact destination escapes the workspace ❌"
+            exit 1
+            ;;
+        esac
 
     - name: 'Extract project/repository naming'
       id: naming
@@ -101,9 +185,11 @@ runs:
     - name: 'Derive publishing parameters'
       id: parameters
       shell: bash
+      env:
+        ENVIRONMENT: "${{ inputs.environment }}"
       run: |
         # Derive publishing parameters
-        if [ ${{ inputs.environment }} != "production" ]; then
+        if [ "$ENVIRONMENT" != "production" ]; then
           echo "base_url=https://test.pypi.org" >> "$GITHUB_ENV"
           echo "publish_url=https://test.pypi.org/legacy/" >> "$GITHUB_ENV"
         else
@@ -114,9 +200,47 @@ runs:
     - name: 'Remove unsupported artefact file types'
       id: files
       shell: bash
+      env:
+        PATH_PREFIX: "${{ inputs.path_prefix }}"
+        ARTEFACT_PATH: "${{ inputs.artefact_path }}"
       run: |
         # Remove unsupported artefact file types
-        find "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}" \
+        if [ -z "$ARTEFACT_PATH" ]; then
+          echo "Error: artefact_path must not be empty ❌"
+          exit 1
+        fi
+        case "$ARTEFACT_PATH" in
+          /*)
+            echo "Error: artefact_path must be a relative path ❌"
+            exit 1
+            ;;
+          *..*)
+            echo "Error: artefact_path must not contain '..' ❌"
+            exit 1
+            ;;
+        esac
+        target="$PATH_PREFIX/$ARTEFACT_PATH"
+        if [ ! -d "$target" ]; then
+          echo "Artefact directory not present; nothing to clean: $target"
+          exit 0
+        fi
+        # Resolve to an absolute path and confirm it stays within the
+        # workspace before deleting anything. Using the resolved path
+        # also prevents a leading '-' being treated as a find option.
+        workspace="$(cd -- "${GITHUB_WORKSPACE:-$PWD}" && pwd -P)"
+        resolved="$(cd -- "$target" && pwd -P)"
+        if [ "$resolved" = "$workspace" ]; then
+          echo "Error: artefact_path must not resolve to the workspace root ❌"
+          exit 1
+        fi
+        case "$resolved/" in
+          "$workspace"/*) ;;
+          *)
+            echo "Error: artefact_path escapes the workspace directory ❌"
+            exit 1
+            ;;
+        esac
+        find "$resolved" \
           ! -name '*.whl' ! -name '*.tar.gz' \
           -type f -exec rm -f {} + || true
 
@@ -132,12 +256,19 @@ runs:
     - name: 'Determine publishing method'
       id: conditions
       shell: bash
+      env:
+        TRUSTED_PUBLISHING: "${{ inputs.trusted_publishing }}"
+        PACKAGE_MATCH: "${{ steps.check-remote.outputs.package_match }}"
+        VERSION_MATCH: "${{ steps.check-remote.outputs.version_match }}"
+        ENVIRONMENT: "${{ inputs.environment }}"
+        OP_SERVICE_ACCOUNT_TOKEN: "${{ inputs.op_service_account_token }}"
+        ONE_PASSWORD_ITEM: "${{ inputs.one_password_item }}"
+        PYPI_CREDENTIAL: "${{ inputs.pypi_credential }}"
+        BASE_URL: "${{ env.base_url }}"
       run: |
         # Determine publishing method
 
         publish_method=""
-        TRUSTED_PUBLISHING="${{ inputs.trusted_publishing }}"
-        PACKAGE_MATCH="${{ steps.check-remote.outputs.package_match }}"
         echo "Trusted publishing mode: $TRUSTED_PUBLISHING"
 
         ### Trusted Publishing Override ###
@@ -160,11 +291,11 @@ runs:
           exit 1
         fi
 
-        if [ "${{ steps.check-remote.outputs.version_match }}" != 'true' ]; then
+        if [ "$VERSION_MATCH" != 'true' ]; then
           echo "This build/release has NOT previously been published ✅"
         else
           echo "This build/release has already been published ❌"
-          if [ "${{ inputs.environment }}" = "production" ]; then
+          if [ "$ENVIRONMENT" = "production" ]; then
             # This is an error for production/tagged releases
             echo "This build/release has already been published ❌" \
               >> "$GITHUB_STEP_SUMMARY"
@@ -172,6 +303,7 @@ runs:
           else
             # Publishing is skipped for non-production workflow runs
             publish_method="Skipped"
+            echo "publish_method=$publish_method" >> "$GITHUB_OUTPUT"
             exit 0
           fi
         fi
@@ -185,8 +317,8 @@ runs:
 
           ### 1Password Vault Credential ###
 
-          if [ -z "${{ inputs.op_service_account_token }}" ] || \
-            [ -z "${{ inputs.one_password_item }}" ]; then
+          if [ -z "$OP_SERVICE_ACCOUNT_TOKEN" ] || \
+            [ -z "$ONE_PASSWORD_ITEM" ]; then
             echo "Unable to use 1Password to retrieve publishing key ❌"
             echo "Two required parameters MUST be set/available"
             echo "Secret:   op_service_account_token"
@@ -198,22 +330,24 @@ runs:
 
           ### GitHub Secret ###
 
-          if [ -z "${{ inputs.pypi_credential }}" ]; then
+          if [ "$publish_method" = "1Password Vault" ]; then
+            # A credential method is already selected; nothing more to do
+            :
+          elif [ -z "$PYPI_CREDENTIAL" ]; then
             echo "GitHub credential NOT set/available: pypi_credential"
             echo "Publishing cannot continue without a valid method ❌"
             echo "Publishing cannot continue without a valid method ❌" \
               >> "$GITHUB_STEP_SUMMARY"
             exit 1
-          elif [ "$publish_method" != "1Password Vault" ]; then
+          else
             echo "Publishing will use GitHub secret ✅"
             publish_method="GitHub Secret"
           fi
 
         fi
 
-        echo "Publishing to: ${{ env.base_url }}"
-        echo "Environment: ${{ inputs.environment }}"
-        echo "publish_method=$publish_method" >> "$GITHUB_ENV"
+        echo "Publishing to: $BASE_URL"
+        echo "Environment: $ENVIRONMENT"
         echo "publish_method=$publish_method" >> "$GITHUB_OUTPUT"
 
     - name: 'Publish PyPI [Trusted Publishing]'
@@ -224,7 +358,7 @@ runs:
       # yamllint disable-line rule:line-length
       uses: modeseven-lfreleng-actions/gh-action-pypi-publish@2bd65a5f4532bf320106f42bfd918026d0946fb3  # v1.11.8
       # yamllint disable-line rule:line-length
-      if: env.publish_method == 'Trusted Publishing' && inputs.publish_disable == 'false'
+      if: steps.conditions.outputs.publish_method == 'Trusted Publishing' && inputs.publish_disable == 'false'
       with:
         repository-url: "${{ env.publish_url }}"
         packages-dir: "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}"
@@ -236,13 +370,50 @@ runs:
         # Optional debugging, pretty much essential for information on failures
         verbose: true
 
+    - name: 'Check pinned 1Password CLI version'
+      if: steps.conditions.outputs.publish_method == '1Password Vault'
+      shell: bash
+      run: |
+        # Best-effort check that the pinned op CLI version is current.
+        # The pinned value is read from the single 'version:' literal on
+        # the load-secrets-action step below (one source of truth).
+        # Never fails the build; only emits a reminder when outdated.
+        action_file="$GITHUB_ACTION_PATH/action.yaml"
+        pinned="$(sed -nE "s/^[[:space:]]*version: '([0-9.]+)'.*/\1/p" \
+          "$action_file" | head -n1)"
+        if [ -z "$pinned" ]; then
+          echo "Could not determine pinned op CLI version ⚠️"
+          exit 0
+        fi
+        api='https://formulae.brew.sh/api/cask/1password-cli.json'
+        latest="$(curl -fsSL --max-time 10 "$api" 2>/dev/null \
+          | jq -r '.version' 2>/dev/null || true)"
+        if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+          echo "Could not determine latest 1Password CLI version ⚠️"
+        elif [ "$latest" != "$pinned" ]; then
+          echo "::warning title=1Password CLI pin outdated::Pinned op" \
+            "CLI version $pinned; latest is $latest"
+          {
+            echo "### ⚠️ 1Password CLI version pin is outdated"
+            echo "Pinned \`op\` CLI version: \`$pinned\`"
+            echo "Latest available version: \`$latest\`"
+            echo "Update the \`version:\` pin in this action when convenient."
+          } >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "Pinned op CLI version is current: $pinned ✅"
+        fi
+
     - name: 'Retrieve Credential [1Password]'
-      if: env.publish_method == '1Password Vault'
+      if: steps.conditions.outputs.publish_method == '1Password Vault'
       # yamllint disable-line rule:line-length
       uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
       with:
         # Export loaded secrets as environment variables
         export-env: true
+        # Single source of truth for the pinned op CLI version; the
+        # action default 'latest' is an unpinned external tool. The
+        # preceding step reads this literal to check for newer releases.
+        version: '2.34.1'
       env:
         pypi_credential: "${{ inputs.one_password_item}}"
         OP_SERVICE_ACCOUNT_TOKEN: "${{ inputs.op_service_account_token }}"
@@ -256,13 +427,14 @@ runs:
       # yamllint disable-line rule:line-length
       uses: modeseven-lfreleng-actions/gh-action-pypi-publish@2bd65a5f4532bf320106f42bfd918026d0946fb3  # v1.11.8
       # yamllint disable-line rule:line-length
-      if: env.publish_method == '1Password Vault' && inputs.publish_disable == 'false'
+      if: steps.conditions.outputs.publish_method == '1Password Vault' && inputs.publish_disable == 'false'
       with:
         repository-url: "${{ env.publish_url }}"
         packages-dir: "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}"
         verify-metadata: false
-        # Credential retrieved from 1Password using service account
-        password: "${{ inputs.pypi_credential}}"
+        # Credential resolved from 1Password and exported by the previous
+        # step (load-secrets-action with export-env: true)
+        password: "${{ env.pypi_credential }}"
         attestations: "${{ inputs.attestations }}"
         print-hash: true
         verbose: true
@@ -277,7 +449,7 @@ runs:
       uses: modeseven-lfreleng-actions/gh-action-pypi-publish@2bd65a5f4532bf320106f42bfd918026d0946fb3  # v1.11.8
       if:
         # yamllint disable-line rule:line-length
-        env.publish_method == 'GitHub Secret' && inputs.publish_disable == 'false'
+        steps.conditions.outputs.publish_method == 'GitHub Secret' && inputs.publish_disable == 'false'
       with:
         repository-url: "${{ env.publish_url }}"
         packages-dir: "${{ inputs.path_prefix }}/${{ inputs.artefact_path }}"
@@ -290,19 +462,25 @@ runs:
 
     - name: 'Print summary/job output'
       shell: bash
+      env:
+        PUBLISH_DISABLE: "${{ inputs.publish_disable }}"
+        PUBLISH_METHOD: "${{ steps.conditions.outputs.publish_method }}"
+        BASE_URL: "${{ env.base_url }}"
+        PROJECT_NAME: "${{ steps.naming.outputs.python_project_name }}"
+        TAG: "${{ inputs.tag }}"
       # yamllint disable rule:line-length
       run: |
         # Print summary/job output
-        if [ "${{ env.publish_disable }}" = 'true' ]; then
+        if [ "$PUBLISH_DISABLE" = 'true' ]; then
           echo "### Publishing Disabled: Dry Run 🛑" >> "$GITHUB_STEP_SUMMARY"
-        elif [ "${{ env.publish_method }}" = 'Skipped' ]; then
+        elif [ "$PUBLISH_METHOD" = 'Skipped' ]; then
           echo "### Publishing Skipped: Previously Released ⛔️" >> "$GITHUB_STEP_SUMMARY"
-        elif [ ${{ env.base_url }} != "https://pypi.org" ]; then
+        elif [ "$BASE_URL" != "https://pypi.org" ]; then
           echo '# 🧪 Test PyPI Release' >> "$GITHUB_STEP_SUMMARY"
         else
           echo '# 🚀 PyPI Release' >> "$GITHUB_STEP_SUMMARY"
         fi
-        echo "Authenticated using: ${{ env.publish_method }}" >> "$GITHUB_STEP_SUMMARY"
-        if [ "${{ env.publish_disable }}" != "true" ]; then
-          echo "🔗 ${{ env.base_url }}/project/${{ steps.naming.outputs.python_project_name }}/${{ inputs.tag }}/" >> "$GITHUB_STEP_SUMMARY"
+        echo "Authenticated using: $PUBLISH_METHOD" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$PUBLISH_DISABLE" != "true" ]; then
+          echo "🔗 $BASE_URL/project/$PROJECT_NAME/$TAG/" >> "$GITHUB_STEP_SUMMARY"
         fi

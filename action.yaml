@@ -247,7 +247,7 @@ runs:
     - name: 'Checking package index for build/release'
       id: check-remote
       # yamllint disable-line rule:line-length
-      uses: lfreleng-actions/pypi-version-check-action@33fa0ac1d20dee72e4430b6bfa728ae61e7079f2 # v0.1.0
+      uses: lfreleng-actions/pypi-version-check-action@d8e60417104f4b8d81f2f68fd2a7c506627e18bd # v0.2.0
       with:
         index_url: "${{ env.base_url }}/simple"
         package_name: "${{ steps.naming.outputs.python_project_name }}"

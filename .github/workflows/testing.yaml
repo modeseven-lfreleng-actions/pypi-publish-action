@@ -26,6 +26,10 @@ jobs:
   tests:
     name: 'Test local GitHub Action'
     runs-on: ubuntu-24.04
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'development'
     permissions:
       contents: read
     timeout-minutes: 15
@@ -38,6 +42,8 @@ jobs:
 
       - name: 'Checkout repository'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # Perform setup prior to running test(s)
       - name: 'Checkout sample project repository'
@@ -45,6 +51,7 @@ jobs:
         with:
           repository: "lfreleng-actions/test-python-project"
           path: 'test-python-project'
+          persist-credentials: false
 
       - name: 'Build Python project'
         # yamllint disable-line rule:line-length
